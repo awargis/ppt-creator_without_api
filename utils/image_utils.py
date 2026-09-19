@@ -3,7 +3,7 @@ import numpy as np
 import cv2
 
 def apply_dark_mode(image: Image.Image) -> Image.Image:
-    # Converts standard crop into high-contrast white text on black background
+    """Converts the raw crop into a premium high-contrast Vidyapeeth dark mode."""
     img_cv = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
     
@@ -13,7 +13,3 @@ def apply_dark_mode(image: Image.Image) -> Image.Image:
     # Invert text to white
     inverted = cv2.bitwise_not(binary)
     return Image.fromarray(inverted)
-
-def validate_crop(image: Image.Image, question_number: int) -> None:
-    if image is None or image.width < 80 or image.height < 40:
-        raise ValueError(f"Q{question_number}: crop is too small or empty.")
