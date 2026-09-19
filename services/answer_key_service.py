@@ -1,12 +1,13 @@
 import re
 
+
 def parse_answer_key_text(text: str) -> dict[int, str]:
-    """Gracefully handles standard answer key formats: '1: A', '1. B', '1-C'"""
-    answer_key = {}
-    if not text: return answer_key
-    pattern = r"(\d{1,3})\s*[:\.\-\)]*\s*\(?([1-4A-Da-d]+)\)?"
-    
-    for match in re.finditer(pattern, text):
-        q_num, ans = match.groups()
-        answer_key[int(q_num)] = ans.upper()
-    return answer_key
+    answers = {}
+    if not text:
+        return answers
+    pattern = re.compile(r"(?:Q\s*)?(\d{1,3})\s*(?:[:.\-)=]|->|\s)\s*\(?([A-Da-d1-4](?:\s*[,/&]\s*[A-Da-d1-4])*)\)?")
+    for match in pattern.finditer(text):
+        number = int(match.group(1))
+        answer = re.sub(r"\s+", "", match.group(2)).upper()
+        answers[number] = answer
+    return answers

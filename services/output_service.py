@@ -1,15 +1,21 @@
 import io
+import re
 import zipfile
 
-def create_subject_outputs(template_bytes: bytes, subject_questions: dict, answers: dict, build_ppt_function):
-    zip_buffer = io.BytesIO()
-    
-    # Memory-safe zipping prevents multi-user file collision
-    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+
+def safe_name(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_") or "Unclassified"
+
+
+def create_subject_outputs(template_bytes: bytes, subject_questions: dict, answers: dict, build_ppt_function, style: str = "Premium Light"):
+    from services.ppt_service import build_subject_ppt
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
         for subject, questions in subject_questions.items():
-            if not questions: continue
-            ppt_bytes = build_ppt_function(template_bytes, questions, answers)
-            zip_file.writestr(f"{subject}/{subject}_Discussion.pptx", ppt_bytes)
-            
-    zip_buffer.seek(0)
-    return zip_buffer
+            if not questions:
+                continue
+            ppt = build_ppt_function(template_bytes, questions, answers, style=style)
+            name = safe_name(subject)
+            archive.writestr(f"{name}/{name}_Discussion.pptx", ppt)
+    output.seek(0)
+    return output

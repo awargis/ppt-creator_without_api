@@ -1,32 +1,44 @@
-def assign_subject(q_num: int, exam_type: str, headers: list, q_page: int, q_col: int, q_y0: float) -> str:
-    """
-    Determines subject using strict standard boundaries for Main/NEET,
-    and falls back to dynamic header tracking for unpredictable Advanced papers.
-    """
-    # 1. Strict Formatting for Standardized Exams
-    if exam_type == "JEE Main":
-        if 1 <= q_num <= 25: return "Physics"
-        elif 26 <= q_num <= 50: return "Chemistry"
-        elif 51 <= q_num <= 75: return "Mathematics"
-        
-    elif exam_type == "NEET UG":
-        if 1 <= q_num <= 45: return "Physics"
-        elif 46 <= q_num <= 90: return "Chemistry"
-        elif 91 <= q_num <= 135: return "Botany"
-        elif 136 <= q_num <= 180: return "Zoology"
+import re
+from typing import Optional
 
-    # 2. Dynamic Tracking for JEE Advanced (Scans for previous headers)
-    current_subject = "Unclassified"
-    for h in headers:
-        # If the header appeared before this question chronologically
-        if (h["page"] < q_page) or \
-           (h["page"] == q_page and h["col"] < q_col) or \
-           (h["page"] == q_page and h["col"] == q_col and h["y0"] < q_y0):
-            
-            if "PHYSICS" in h["text"]: current_subject = "Physics"
-            elif "CHEMISTRY" in h["text"]: current_subject = "Chemistry"
-            elif "MATHEMATICS" in h["text"]: current_subject = "Mathematics"
-            elif "BOTANY" in h["text"]: current_subject = "Botany"
-            elif "ZOOLOGY" in h["text"]: current_subject = "Zoology"
-            
-    return current_subject
+SUBJECT_ALIASES = {
+    "physics": "Physics", "phys": "Physics", "phy": "Physics",
+    "chemistry": "Chemistry", "chem": "Chemistry",
+    "mathematics": "Mathematics", "maths": "Mathematics", "math": "Mathematics",
+    "botany": "Botany", "bot": "Botany",
+    "zoology": "Zoology", "zoo": "Zoology",
+}
+
+
+def normalize_subject(value: Optional[str], known_subjects: list[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = re.sub(r"[^a-zA-Z ]", " ", str(value)).lower()
+    for token in text.split():
+        subject = SUBJECT_ALIASES.get(token)
+        if subject in known_subjects:
+            return subject
+    for subject in known_subjects:
+        if subject.lower() in text:
+            return subject
+    return None
+
+
+def assign_subject(q_num: int, exam_type: str, headers: list, q_page: int, q_col: int, q_y0: float) -> str:
+    # Number ranges are a useful fallback, never the only mechanism.
+    if exam_type == "JEE Main":
+        ranges = [(1, 25, "Physics"), (26, 50, "Chemistry"), (51, 75, "Mathematics")]
+    elif exam_type == "NEET UG":
+        ranges = [(1, 45, "Physics"), (46, 90, "Chemistry"), (91, 135, "Botany"), (136, 180, "Zoology")]
+    else:
+        ranges = []
+    for start, end, subject in ranges:
+        if start <= q_num <= end:
+            return subject
+
+    current = "Unclassified"
+    for header in sorted(headers, key=lambda h: (h["page"], h["col"], h["y0"])):
+        before = (header["page"], header["col"], header["y0"]) <= (q_page, q_col, q_y0)
+        if before:
+            current = header["subject"] or current
+    return current
