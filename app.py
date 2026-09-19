@@ -1,48 +1,140 @@
-import io, re, zipfile
+import json
+import re
+
 import streamlit as st
-from config import get_subjects
-from pipeline.orchestrator import run_pipeline
+
 from answer_key.parser import parse
 from answer_key.validator import validate
 from image.enhancement import enhance
-from ppt.exporter import export_subject_ppts
-from ui.review import render_review
+from pipeline.orchestrator import run_pipeline
+from pipeline.exam_detector import detect_exam_type
+from config import get_subjects
+from services.output_service import create_subject_outputs
 from ui.report import render_report
+from ui.review import render_review
+from ui.sidebar import render_sidebar
 
-st.set_page_config(page_title="Vidyapeeth Studio", page_icon="📚", layout="wide")
-st.title("📚 Vidyapeeth Test Presentation Studio")
-st.caption("Local-first • OCR fallback • no AI API")
-exam = st.sidebar.selectbox("Exam", ["JEE Main", "JEE Advanced", "NEET UG"])
-dpi = st.sidebar.slider("Render DPI", 160, 320, 240, 20)
-pad_x = st.sidebar.slider("Horizontal margin", 0, 80, 24)
-pad_y = st.sidebar.slider("Vertical margin", 0, 80, 14)
-style = st.sidebar.selectbox("Visual style", ["Premium Light", "Premium Dark"])
-pdf = st.file_uploader("1. Question paper PDF", type=["pdf"])
-template = st.file_uploader("2. Sample PPT template", type=["pptx"])
-answer_text = st.text_area("3. Answer key (optional)", placeholder="1: A\n2: B\n3: C")
 
-if st.button("🚀 Analyze and generate", type="primary", use_container_width=True):
-    if not pdf or not template:
-        st.error("Upload both the PDF and PPT template."); st.stop()
-    try:
-        answers = parse(answer_text)
-        with st.spinner("Extracting text, detecting layout, and creating crops..."):
-            regions, report = run_pipeline(pdf.getvalue(), exam, get_subjects(exam), dpi, pad_x, pad_y, True, answers)
-            for region in regions: region.image = enhance(region.image, style)
-            report.pages = len({r.page_index for r in regions})
+st.set_page_config(
+    page_title="Vidyapeeth Test Presentation Studio",
+    page_icon="📚",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+st.markdown("# 📚 Vidyapeeth Test Presentation Studio")
+st.caption("Local-first • Native PDF extraction • OCR fallback • Template-based PPTX • No Gemini/API dependency")
+
+settings = render_sidebar()
+
+with st.expander("How the production pipeline works", expanded=False):
+    st.markdown(
+        "**PDF → native text → OCR fallback → layout/columns → question detection → "
+        "subject classification → confidence review → crop enhancement → template-based PPTX → ZIP.**"
+    )
+
+pdf = st.file_uploader("### 1 · Question paper PDF", type=["pdf"], key="pdf")
+template = st.file_uploader("### 2 · Discussion PPT template", type=["pptx"], key="template")
+answer_text = st.text_area(
+    "### 3 · Answer key (optional)",
+    placeholder="1: A\n2: B\n3: C\n4: D",
+    height=120,
+)
+
+analyze = st.button("🚀 Analyze question paper", type="primary", use_container_width=True)
+
+if analyze:
+    if not pdf:
+        st.error("Please upload the question-paper PDF.")
+        st.stop()
+    if not template:
+        st.error("Please upload the discussion PPT template.")
+        st.stop()
+
+    answers = parse(answer_text)
+    st.session_state["answers"] = answers
+
+    detection = detect_exam_type(pdf.getvalue())
+    if settings["exam_type"] == "Auto-detect":
+        effective_exam = detection.exam_type
+    else:
+        effective_exam = settings["exam_type"]
+    effective_subjects = get_subjects(effective_exam)
+    st.session_state["detected_exam"] = detection
+    st.session_state["effective_exam"] = effective_exam
+    st.session_state["effective_subjects"] = effective_subjects
+
+    with st.status("Processing document…", expanded=True) as status:
+        st.write(
+            f"Exam: **{effective_exam}** "
+            f"(auto-detection confidence {detection.confidence:.0%})"
+            if settings["exam_type"] == "Auto-detect"
+            else f"Exam: **{effective_exam}** (manual selection)"
+        )
+        st.write("Rendering PDF pages…")
+        try:
+            regions, report = run_pipeline(
+                pdf.getvalue(),
+                effective_exam,
+                effective_subjects,
+                settings["render_dpi"],
+                settings["pad_x"],
+                settings["pad_y"],
+                settings["use_ocr"],
+                answers,
+            )
+            for region in regions:
+                if region.image is not None:
+                    region.image = enhance(region.image, settings["style"])
             report.missing_answers = validate(regions, answers)["missing"]
-        render_report(report); render_review(regions)
-        if not regions: raise ValueError("No questions detected. Try a higher DPI or a selectable-text PDF.")
-        with st.spinner("Building subject-wise PowerPoint files..."):
-            outputs = export_subject_ppts(template.getvalue(), regions, answers)
-            archive = io.BytesIO()
-            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
-                for subject, data in outputs.items():
-                    safe = re.sub(r"[^A-Za-z0-9_-]+", "_", subject)
-                    z.writestr(f"{safe}/{safe}_Discussion.pptx", data)
-            archive.seek(0)
-        st.success(f"Generated {len(outputs)} presentation(s) from {len(regions)} question(s).")
-        st.download_button("📦 Download PPT ZIP", archive.getvalue(), f"{exam.replace(' ', '_')}_Presentations.zip", "application/zip", type="primary", use_container_width=True)
-    except Exception as exc:
-        st.error(f"Processing failed: {exc}")
-        st.exception(exc)
+            st.session_state["regions"] = regions
+            st.session_state["report"] = report
+            st.session_state["template_bytes"] = template.getvalue()
+            st.session_state["effective_exam"] = effective_exam
+            status.update(label=f"Detected {len(regions)} question(s)", state="complete")
+        except Exception as exc:
+            status.update(label="Processing failed", state="error")
+            st.exception(exc)
+            st.stop()
+
+if "regions" in st.session_state:
+    regions = st.session_state["regions"]
+    answers = st.session_state.setdefault("answers", {})
+    report = st.session_state["report"]
+    effective_subjects = st.session_state.get("effective_subjects", settings["subjects"])
+    effective_exam = st.session_state.get("effective_exam", settings["exam_type"])
+
+    if "detected_exam" in st.session_state and settings["exam_type"] == "Auto-detect":
+        detection = st.session_state["detected_exam"]
+        evidence = ", ".join(detection.evidence) if detection.evidence else "No strong marker"
+        st.info(f"Auto-detected **{effective_exam}** · confidence {detection.confidence:.0%} · evidence: {evidence}")
+
+    render_report(report)
+    render_review(regions, effective_subjects, answers)
+
+    if st.button("📦 Generate production ZIP", type="primary", use_container_width=True):
+        # Recompute answer validation after manual review edits.
+        report.missing_answers = validate(regions, answers)["missing"]
+        with st.spinner("Building template-based presentations, crops and manifest…"):
+            try:
+                archive, manifest = create_subject_outputs(
+                    st.session_state["template_bytes"], regions, answers, settings["style"]
+                )
+                filename = f"{re.sub(r'[^A-Za-z0-9_-]+', '_', st.session_state['effective_exam'])}_Discussion_Studio.zip"
+                st.success(
+                    f"Ready: {len(manifest['presentations'])} presentation(s), "
+                    f"{len(manifest['questions'])} crop(s)."
+                )
+                st.download_button(
+                    "⬇️ Download complete project output",
+                    archive.getvalue(),
+                    filename,
+                    "application/zip",
+                    type="primary",
+                    use_container_width=True,
+                )
+                with st.expander("Manifest", expanded=False):
+                    st.json(manifest)
+            except Exception as exc:
+                st.error(f"PPT generation failed: {exc}")
+                st.exception(exc)

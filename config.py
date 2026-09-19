@@ -1,5 +1,11 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+
+
+JEE_SUBJECTS = ["Physics", "Chemistry", "Mathematics"]
+NEET_SUBJECTS = ["Physics", "Chemistry", "Botany", "Zoology"]
+EXAMS = ["Auto-detect", "JEE Main", "JEE Advanced", "NEET UG"]
+STYLES = ["Premium Light", "Premium Dark", "High Contrast"]
+
 
 @dataclass(frozen=True)
 class AppConfig:
@@ -10,8 +16,10 @@ class AppConfig:
     ocr_enabled: bool = True
     style: str = "Premium Light"
 
-JEE_SUBJECTS = ["Physics", "Chemistry", "Mathematics"]
-NEET_SUBJECTS = ["Physics", "Chemistry", "Botany", "Zoology"]
 
 def get_subjects(exam_type: str) -> list[str]:
-    return NEET_SUBJECTS.copy() if exam_type == "NEET UG" else JEE_SUBJECTS.copy()
+    if exam_type == "NEET UG":
+        return NEET_SUBJECTS.copy()
+    if exam_type == "Auto-detect":
+        return JEE_SUBJECTS.copy() + ["Botany", "Zoology"]
+    return JEE_SUBJECTS.copy()

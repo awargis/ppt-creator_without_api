@@ -1,3 +1,7 @@
 def validate(questions, answers):
     numbers = {q.number for q in questions}
-    return {"missing": sorted(numbers - set(answers)), "unused": sorted(set(answers) - numbers)}
+    answer_numbers = set(answers or {})
+    return {
+        "missing": sorted(numbers - answer_numbers),
+        "unused": sorted(answer_numbers - numbers),
+    }
