@@ -1,7 +1,7 @@
 import streamlit as st
 
 def render_question_preview(subject_questions: dict):
-    with st.expander("Preview Processed Questions (Dark Mode)"):
+    with st.expander("Preview Processed Slides (Dark Mode)"):
         for subject, questions in subject_questions.items():
             if not questions: continue
             st.markdown(f"### {subject}")
