@@ -3,3 +3,4 @@ doclayout-yolo
 huggingface-hub
 opencv-python
 numpy
+
