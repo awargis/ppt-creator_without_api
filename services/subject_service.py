@@ -1,31 +1,32 @@
-import re
-from typing import Optional
-
-def assign_subject_by_number(q_num: int, exam_type: str) -> str:
-    """Strictly routes questions to subjects based on standard numbering patterns."""
-    if "JEE" in exam_type:
-        # JEE Main standard format (25 or 30 questions per subject)
-        if 1 <= q_num <= 30: return "Physics"
-        elif 31 <= q_num <= 60: return "Chemistry"
-        elif 61 <= q_num <= 90: return "Mathematics"
-        # Fallback for the 75-question format you mentioned
-        elif 1 <= q_num <= 25: return "Physics"
+def assign_subject(q_num: int, exam_type: str, headers: list, q_page: int, q_col: int, q_y0: float) -> str:
+    """
+    Determines subject using strict standard boundaries for Main/NEET,
+    and falls back to dynamic header tracking for unpredictable Advanced papers.
+    """
+    # 1. Strict Formatting for Standardized Exams
+    if exam_type == "JEE Main":
+        if 1 <= q_num <= 25: return "Physics"
         elif 26 <= q_num <= 50: return "Chemistry"
         elif 51 <= q_num <= 75: return "Mathematics"
         
-    elif "NEET" in exam_type:
-        # NEET UG standard format (50 questions per section)
-        if 1 <= q_num <= 50: return "Physics"
-        elif 51 <= q_num <= 100: return "Chemistry"
-        elif 101 <= q_num <= 150: return "Botany"
-        elif 151 <= q_num <= 200: return "Zoology"
-    
-    return "Unclassified"
+    elif exam_type == "NEET UG":
+        if 1 <= q_num <= 45: return "Physics"
+        elif 46 <= q_num <= 90: return "Chemistry"
+        elif 91 <= q_num <= 135: return "Botany"
+        elif 136 <= q_num <= 180: return "Zoology"
 
-def normalize_subject(value: Optional[str], known_subjects: list[str]) -> Optional[str]:
-    """Fallback text normalization if headers are ever used again."""
-    if not value: return None
-    value = re.sub(r"[^a-z\s]", " ", str(value).lower()).strip()
-    for subject in known_subjects:
-        if subject.lower() in value: return subject
-    return None
+    # 2. Dynamic Tracking for JEE Advanced (Scans for previous headers)
+    current_subject = "Unclassified"
+    for h in headers:
+        # If the header appeared before this question chronologically
+        if (h["page"] < q_page) or \
+           (h["page"] == q_page and h["col"] < q_col) or \
+           (h["page"] == q_page and h["col"] == q_col and h["y0"] < q_y0):
+            
+            if "PHYSICS" in h["text"]: current_subject = "Physics"
+            elif "CHEMISTRY" in h["text"]: current_subject = "Chemistry"
+            elif "MATHEMATICS" in h["text"]: current_subject = "Mathematics"
+            elif "BOTANY" in h["text"]: current_subject = "Botany"
+            elif "ZOOLOGY" in h["text"]: current_subject = "Zoology"
+            
+    return current_subject
